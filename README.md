@@ -1,4 +1,4 @@
-# Multi-Class Adversarial Firewall with Adaptive Defense
+# Multi-Class Adversarial Firewall: A Lightweight Defense Framework for Real-Time ML Systems
 
  In this work, we introduce a lightweight, modular firewall layer for upstream adversarial attack classification and defense selection.
 
