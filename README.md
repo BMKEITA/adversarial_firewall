@@ -1,6 +1,7 @@
 # Multi-Class Adversarial Firewall: A Lightweight Defense Framework for Real-Time ML Systems
 
- In this work, we introduce a lightweight, modular firewall layer for upstream adversarial attack classification and defense selection.
+The susceptibility of machine learning models to adversarial attacks presents serious risks in safety-critical domains. We present in this paper a Multi-Class Adversarial Firewall, a lightweight defense framework that detects and classifies multiple adversarial attacks in real-time while applying targeted countermeasures. In contrast to current detection techniques that carry out binary classification or concentrate on single attack types, our approach distinguishes between clean samples and specific attack classes including FGSM, PGD, Noise, and Membership Inference Attacks (MIA). The framework incorporates both spatial (Laplacian, edge density, local entropy) and frequency domain (DCT coefficients, spectral energy distribution) features within a compact neural network to apply the particular  defense strategy based on confidence. 
+	Experimental evaluation shows 95.07\% overall accuracy with 94.70\% detection rate on MNIST, 95.00\% accuracy with 99.25\% detection rate on CIFAR-10, and 86.60\% accuracy with 99.38\% detection rate on CIFAR-100, while maintaining a model size of 0.20 MB and average inference time of 35-44 ms across datasets. Our system significantly outperforms existing binary detection methods and provides attack-specific defense strategies, enabling practical deployment in resource-constrained environments.
 
 ## Features
 - **Multi-Class Attack Detection**: Classifies FGSM, PGD, Noise, MIA, CW, DeepFool, and SPSA attacks
