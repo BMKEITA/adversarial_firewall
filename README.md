@@ -30,13 +30,19 @@ pip install -r requirements.txt
 python adversarial_firewall.py --mode demo --dataset CIFAR10
 
 # Training with all attack types:
-python adversarial_firewall.py --mode train --dataset CIFAR10 --include_all_attacks
+python adversarial_firewall.py --mode train --dataset CIFAR10 --epochs 25 --samples 400
+# Evaluation Mode:
+python adversarial_firewall.py --mode evaluate --dataset CIFAR10 --load path/to/best_firewall_model.pth
 
-# Model compression:
-python adversarial_firewall.py --mode compress --load firewall_output/best_firewall_model.pth --compress_ratio 0.3
+#  Deployment Mode:
+python adversarial_firewall.py --mode deploy --dataset CIFAR10 --load path/to/best_firewall_model.pth
 
-# Full demonstration:
-python adversarial_firewall.py --mode demo --dataset CIFAR10 --num_classes 5
+#Feature Importance Analysis
+python adversarial_firewall.py --mode importance --dataset CIFAR10 --load path/to/best_firewall_model.pth
+
+#Model Compression
+
+python adversarial_firewall.py --mode compress --dataset CIFAR10 --load path/to/model.pth --compress_ratio 0.5
 ```
 #Project Structure
 ```bash
