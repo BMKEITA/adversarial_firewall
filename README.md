@@ -19,22 +19,39 @@ The susceptibility of machine learning models to adversarial attacks presents se
 
 # Installation
 ```bash
-## Clone the repository
+# Clone the repository
 git clone https://github.com/BMKEITA/adversarial_firewall.git
 cd adversarial_firewall
 
-## Install dependencies
+# Install dependencies
 pip install -r requirements.txt
 
-## Run demo (5 classes):
+# Run demo (5 classes):
 python adversarial_firewall.py --mode demo --dataset CIFAR10
 
-## Training with all attack types:
+# Training with all attack types:
 python adversarial_firewall.py --mode train --dataset CIFAR10 --include_all_attacks
 
-## Model compression:
+# Model compression:
 python adversarial_firewall.py --mode compress --load firewall_output/best_firewall_model.pth --compress_ratio 0.3
 
-## Full demonstration:
+# Full demonstration:
 python adversarial_firewall.py --mode demo --dataset CIFAR10 --num_classes 5
+```
+#Project Structure
+```bash
+adversarial_firewall/
+├── adversarial_firewall.py    # Main implementation file
+├── requirements.txt           # Python dependencies
+├── firewall_output/           # Generated outputs (checkpoints, logs, visualizations)
+│   ├── best_firewall_model.pth
+│   ├── training_history.png
+│   ├── evaluation_results.json
+│   └── visual_examples/
+│       ├── attack_comparison.png
+│       ├── spatial_features.png
+│       └── frequency_features.png
+└── README.md                  # This file
+```
+
 
