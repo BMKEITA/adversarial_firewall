@@ -17,17 +17,17 @@ The susceptibility of machine learning models to adversarial attacks presents se
 - **DefenseModule**: Implements various defense strategies
 - **AdversarialFirewall**: Main firewall class with training and deployment capabilities
 
-## Installation
-
+# Installation
 ```bash
+## Clone the repository
 git clone https://github.com/BMKEITA/adversarial_firewall.git
 cd adversarial_firewall
 
 ## Install dependencies
 pip install -r requirements.txt
 
-## Basic training (5 classes):
-python adversarial_firewall.py --mode train --dataset CIFAR10 --epochs 25
+## Run demo (5 classes):
+python adversarial_firewall.py --mode demo --dataset CIFAR10
 
 ## Training with all attack types:
 python adversarial_firewall.py --mode train --dataset CIFAR10 --include_all_attacks
