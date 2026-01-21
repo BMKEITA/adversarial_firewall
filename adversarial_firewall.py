@@ -92,6 +92,8 @@ class AdversarialFirewallConfig:
             5: 'CW',  # Carlini-Wagner attack
             6: 'DeepFool',
             7: 'SPSA',
+            8: 'Boundary',
+            9: 'JSMA',
         }
         
         # Defense strategies for each attack
@@ -104,6 +106,8 @@ class AdversarialFirewallConfig:
             'CW': 'certified_defense',
             'DeepFool': 'gradient_masking',
             'SPSA': 'ensemble_defense',
+            'Boundary': 'randomization',
+            'JSMA': 'feature_squeezing',
         }
         
         # Defense parameters - Enhanced with more options
@@ -170,6 +174,13 @@ class AdversarialFirewallConfig:
             if hasattr(config, key):
                 setattr(config, key, value)
         return config
+    
+    def get_attack_classes_for_num_classes(self, num_classes: int) -> Dict[int, str]:
+        """Get attack classes for a specific number of classes"""
+        if num_classes > len(self.attack_classes):
+            raise ValueError(f"Requested {num_classes} classes but only {len(self.attack_classes)} are available")
+        
+        return {i: self.attack_classes[i] for i in range(num_classes)}
 
 # ==================== ENHANCED FEATURE EXTRACTORS ====================
 class EnhancedSpatialExtractor:
@@ -344,6 +355,105 @@ class EnhancedSpatialExtractor:
             dummy = np.random.randn(32, 32).astype(np.float32)
             _, self.feature_names = self._extract_features_with_names(dummy)
         return self.feature_names
+    
+    def visualize_features(self, image: np.ndarray, save_path: Optional[str] = None):
+        """Visualize spatial features"""
+        try:
+            if isinstance(image, torch.Tensor):
+                image = image.detach().cpu().numpy()
+            
+            # Handle input shape
+            if len(image.shape) == 3:
+                if image.shape[0] in [1, 3]:
+                    image = np.transpose(image, (1, 2, 0))
+            
+            # Convert to grayscale
+            if len(image.shape) == 3 and image.shape[2] == 3:
+                gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+            else:
+                gray = image.squeeze()
+            
+            # Normalize to [0, 1]
+            if gray.max() > 1.0:
+                gray = gray / 255.0
+            
+            # Apply histogram equalization
+            gray_uint8 = (gray * 255).astype(np.uint8)
+            enhanced = cv2.equalizeHist(gray_uint8)
+            
+            # Compute visualizations
+            # Gradient magnitude
+            sobelx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+            sobely = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+            grad_mag = np.sqrt(sobelx**2 + sobely**2)
+            grad_mag = (grad_mag / grad_mag.max() * 255).astype(np.uint8)
+            
+            # Laplacian
+            laplacian = self._safe_laplacian(gray)
+            laplacian_abs = np.abs(laplacian)
+            laplacian_abs = (laplacian_abs / laplacian_abs.max() * 255).astype(np.uint8)
+            
+            # Edges (Canny)
+            edges = cv2.Canny(enhanced, 50, 150)
+            
+            # Local contrast
+            local_mean = cv2.boxFilter(gray, cv2.CV_32F, (5, 5))
+            local_std = cv2.boxFilter(gray**2, cv2.CV_32F, (5, 5))
+            local_std = np.sqrt(np.maximum(local_std - local_mean**2, 0))
+            local_std = (local_std / local_std.max() * 255).astype(np.uint8)
+            
+            # High frequency content
+            kernel_hp = np.array([[-1, -1, -1], [-1, 8, -1], [-1, -1, -1]]) / 8.0
+            high_freq = cv2.filter2D(gray, cv2.CV_32F, kernel_hp)
+            high_freq_abs = np.abs(high_freq)
+            high_freq_abs = (high_freq_abs / high_freq_abs.max() * 255).astype(np.uint8)
+            
+            # Create visualization grid
+            fig, axes = plt.subplots(2, 3, figsize=(12, 8))
+            
+            # Original
+            axes[0, 0].imshow(gray, cmap='gray')
+            axes[0, 0].set_title('Original Image')
+            axes[0, 0].axis('off')
+            
+            # Gradient magnitude
+            axes[0, 1].imshow(grad_mag, cmap='gray')
+            axes[0, 1].set_title('Gradient Magnitude')
+            axes[0, 1].axis('off')
+            
+            # Laplacian
+            axes[0, 2].imshow(laplacian_abs, cmap='gray')
+            axes[0, 2].set_title('Laplacian (Edge Detection)')
+            axes[0, 2].axis('off')
+            
+            # Canny edges
+            axes[1, 0].imshow(edges, cmap='gray')
+            axes[1, 0].set_title('Canny Edges')
+            axes[1, 0].axis('off')
+            
+            # Local contrast
+            axes[1, 1].imshow(local_std, cmap='gray')
+            axes[1, 1].set_title('Local Contrast (Std)')
+            axes[1, 1].axis('off')
+            
+            # High frequency
+            axes[1, 2].imshow(high_freq_abs, cmap='gray')
+            axes[1, 2].set_title('High Frequency Content')
+            axes[1, 2].axis('off')
+            
+            plt.tight_layout()
+            
+            if save_path:
+                plt.savefig(save_path, dpi=150, bbox_inches='tight')
+                plt.close()
+                logger.info(f"Spatial features visualization saved to: {save_path}")
+            else:
+                plt.show()
+                
+        except Exception as e:
+            logger.error(f"Error visualizing spatial features: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 class EnhancedFrequencyExtractor:
@@ -480,6 +590,99 @@ class EnhancedFrequencyExtractor:
             dummy = np.random.randn(32, 32).astype(np.float32)
             _, self.feature_names = self._extract_features_with_names(dummy)
         return self.feature_names
+    
+    def visualize_features(self, image: np.ndarray, save_path: Optional[str] = None):
+        """Visualize frequency features using DCT"""
+        try:
+            if isinstance(image, torch.Tensor):
+                image = image.detach().cpu().numpy()
+            
+            if len(image.shape) == 3:
+                if image.shape[0] in [1, 3]:
+                    image = np.transpose(image, (1, 2, 0))
+            
+            # Convert to grayscale
+            if len(image.shape) == 3 and image.shape[2] == 3:
+                gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+            else:
+                gray = image.squeeze()
+            
+            # Normalize
+            if gray.max() > 1.0:
+                gray = gray / 255.0
+            
+            # Ensure proper data type
+            gray = gray.astype(np.float64)
+            
+            # Apply DCT to entire image
+            dct_image = fftpack.dct(fftpack.dct(gray.T, norm='ortho').T, norm='ortho')
+            
+            # Create visualization
+            fig, axes = plt.subplots(2, 3, figsize=(12, 8))
+            
+            # Original image
+            axes[0, 0].imshow(gray, cmap='gray')
+            axes[0, 0].set_title('Original Image')
+            axes[0, 0].axis('off')
+            
+            # Full DCT spectrum (log scale for better visualization)
+            dct_log = np.log(np.abs(dct_image) + 1)
+            axes[0, 1].imshow(dct_log, cmap='hot')
+            axes[0, 1].set_title('DCT Spectrum (Log Scale)')
+            axes[0, 1].axis('off')
+            
+            # Low frequencies (first 8x8 coefficients)
+            low_freq_mask = np.zeros_like(dct_image)
+            low_freq_mask[:8, :8] = 1
+            dct_low = dct_image * low_freq_mask
+            axes[0, 2].imshow(np.abs(dct_low), cmap='hot')
+            axes[0, 2].set_title('Low Frequencies (8x8)')
+            axes[0, 2].axis('off')
+            
+            # Mid frequencies
+            mid_freq_mask = np.zeros_like(dct_image)
+            mid_freq_mask[8:16, 8:16] = 1
+            dct_mid = dct_image * mid_freq_mask
+            axes[1, 0].imshow(np.abs(dct_mid), cmap='hot')
+            axes[1, 0].set_title('Mid Frequencies (8x8)')
+            axes[1, 0].axis('off')
+            
+            # High frequencies
+            h, w = dct_image.shape
+            high_freq_mask = np.ones_like(dct_image)
+            high_freq_mask[:16, :16] = 0
+            dct_high = dct_image * high_freq_mask
+            axes[1, 1].imshow(np.abs(dct_high), cmap='hot')
+            axes[1, 1].set_title('High Frequencies')
+            axes[1, 1].axis('off')
+            
+            # Energy distribution bar chart
+            total_energy = np.sum(dct_image**2)
+            low_energy = np.sum(dct_image[:8, :8]**2)
+            mid_energy = np.sum(dct_image[8:16, 8:16]**2)
+            high_energy = total_energy - low_energy - mid_energy
+            
+            energies = [low_energy/total_energy, mid_energy/total_energy, high_energy/total_energy]
+            labels = ['Low Freq', 'Mid Freq', 'High Freq']
+            
+            axes[1, 2].bar(labels, energies, color=['blue', 'green', 'red'])
+            axes[1, 2].set_title('Frequency Energy Distribution')
+            axes[1, 2].set_ylabel('Energy Ratio')
+            axes[1, 2].set_ylim(0, 1)
+            
+            plt.tight_layout()
+            
+            if save_path:
+                plt.savefig(save_path, dpi=150, bbox_inches='tight')
+                plt.close()
+                logger.info(f"Frequency features visualization saved to: {save_path}")
+            else:
+                plt.show()
+                
+        except Exception as e:
+            logger.error(f"Error visualizing frequency features: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 # ==================== ENHANCED FIREWALL NETWORK ====================
@@ -937,6 +1140,77 @@ class DefenseModule:
             return self.randomization_defense
         else:
             return lambda x: x  # Identity (forward)
+    
+    def visualize_defense_effects(self, original_images: torch.Tensor, attack_type: str, save_path: Optional[str] = None):
+        """Visualize defense effects on adversarial images"""
+        try:
+            import matplotlib.pyplot as plt
+            
+            # Get defense function
+            defense_func = self.get_defense(attack_type)
+            
+            # Apply defense
+            if defense_func.__name__ == '<lambda>' and 'adversarial_training' in str(defense_func):
+                # For adversarial training, we need model and labels
+                logger.warning("Cannot visualize adversarial_training defense without model and labels")
+                return
+            else:
+                defended_images = defense_func(original_images)
+            
+            # Convert to numpy for visualization
+            batch_size = min(3, original_images.shape[0])
+            
+            fig, axes = plt.subplots(batch_size, 3, figsize=(12, 4 * batch_size))
+            
+            if batch_size == 1:
+                axes = axes.reshape(1, -1)
+            
+            for i in range(batch_size):
+                # Original image
+                orig_np = original_images[i].cpu().numpy()
+                if orig_np.shape[0] in [1, 3]:
+                    orig_np = np.transpose(orig_np, (1, 2, 0))
+                
+                # Defended image
+                def_np = defended_images[i].cpu().numpy()
+                if def_np.shape[0] in [1, 3]:
+                    def_np = np.transpose(def_np, (1, 2, 0))
+                
+                # Difference
+                diff = np.abs(def_np - orig_np)
+                diff = (diff / diff.max() * 255).astype(np.uint8) if diff.max() > 0 else diff
+                
+                # Plot original
+                axes[i, 0].imshow(orig_np if orig_np.shape[2] == 3 else orig_np.squeeze(), 
+                                cmap='gray' if len(orig_np.shape) == 2 else None)
+                axes[i, 0].set_title(f'Original (Attack: {attack_type})')
+                axes[i, 0].axis('off')
+                
+                # Plot defended
+                axes[i, 1].imshow(def_np if def_np.shape[2] == 3 else def_np.squeeze(), 
+                                cmap='gray' if len(def_np.shape) == 2 else None)
+                axes[i, 1].set_title('After Defense')
+                axes[i, 1].axis('off')
+                
+                # Plot difference
+                axes[i, 2].imshow(diff, cmap='hot')
+                axes[i, 2].set_title('Difference Map')
+                axes[i, 2].axis('off')
+            
+            plt.suptitle(f'Defense Effects for {attack_type} Attack', fontsize=16, y=1.02)
+            plt.tight_layout()
+            
+            if save_path:
+                plt.savefig(save_path, dpi=150, bbox_inches='tight')
+                plt.close()
+                logger.info(f"Defense effects visualization saved to: {save_path}")
+            else:
+                plt.show()
+                
+        except Exception as e:
+            logger.error(f"Error visualizing defense effects: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 # ==================== ADVERSARIAL FIREWALL ====================
@@ -948,12 +1222,21 @@ class AdversarialFirewall:
         self.config = AdversarialFirewallConfig(dataset_name)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        # Determine number of classes
-        if num_classes is None:
+        # Determine number of classes - use provided value or default
+        if num_classes is not None:
+            self.num_training_classes = num_classes
+        else:
             # For training, use the actual attack classes we'll train on
             self.num_training_classes = 5  # Clean + 4 attacks
-        else:
-            self.num_training_classes = num_classes
+        
+        # Validate num_classes
+        if self.num_training_classes > len(self.config.attack_classes):
+            logger.warning(f"Requested {self.num_training_classes} classes but only {len(self.config.attack_classes)} are available")
+            logger.warning(f"Using maximum available: {len(self.config.attack_classes)} classes")
+            self.num_training_classes = len(self.config.attack_classes)
+        
+        # Update the config's attack_classes based on num_training_classes
+        self.config.attack_classes = self.config.get_attack_classes_for_num_classes(self.num_training_classes)
         
         logger.info(f"\n{'='*80}")
         logger.info("ENHANCED MULTI-CLASS ADVERSARIAL FIREWALL")
@@ -964,10 +1247,10 @@ class AdversarialFirewall:
         logger.info(f"Attack classes: {list(self.config.attack_classes.values())}")
         logger.info(f"Defense strategies: {self.config.defense_strategies}")
         
-        # Enhanced firewall network
+        # Enhanced firewall network - now uses the correct number of classes
         self.firewall = EnhancedFirewallNetwork(
             self.config, 
-            num_classes=self.num_training_classes
+            num_classes=self.num_training_classes  # Pass the actual number
         ).to(self.device)
         
         # Main classifier (protected model)
@@ -1137,6 +1420,162 @@ class AdversarialFirewall:
                 
                 adv_images = torch.tanh(w) * 0.5 + 0.5
                 return adv_images.detach()
+            
+            def deepfool(self, images, model, labels, max_iter=50, overshoot=0.02):
+                """DeepFool attack"""
+                images_adv = images.clone().detach()
+                model.eval()
+                
+                batch_size = images.shape[0]
+                for i in range(batch_size):
+                    image = images_adv[i:i+1]
+                    label = labels[i:i+1]
+                    
+                    pert = torch.zeros_like(image, requires_grad=True)
+                    image_pert = image + pert
+                    
+                    for _ in range(max_iter):
+                        image_pert.requires_grad = True
+                        outputs = model(image_pert)
+                        orig_output = outputs[0, label].item()
+                        
+                        # Find closest decision boundary
+                        grads = []
+                        for c in range(outputs.shape[1]):
+                            if c != label:
+                                grad = torch.autograd.grad(outputs[0, c], image_pert)[0]
+                                grads.append(grad)
+                        
+                        if not grads:
+                            break
+                        
+                        # Calculate perturbation
+                        grads = torch.stack(grads)
+                        w = grads - torch.autograd.grad(outputs[0, label], image_pert)[0]
+                        f = outputs[0, :] - outputs[0, label]
+                        f = f.view(-1, 1)
+                        
+                        # Avoid division by zero
+                        denom = torch.norm(w.view(w.shape[0], -1), dim=1) ** 2
+                        denom = denom.view(-1, 1) + 1e-8
+                        pert_i = torch.abs(f) * w / denom
+                        pert_i = pert_i.sum(dim=0)
+                        
+                        # Update perturbation
+                        pert = pert + pert_i * (1 + overshoot)
+                        image_pert = torch.clamp(image + pert, 0, 1).detach()
+                
+                return torch.clamp(images + pert, 0, 1)
+            
+            def spsa(self, images, model, labels, epsilon=0.1, delta=0.01, lr=0.01, iterations=10):
+                """SPSA (Simultaneous Perturbation Stochastic Approximation) attack"""
+                images_adv = images.clone().detach()
+                model.eval()
+                
+                for _ in range(iterations):
+                    # Generate random perturbation
+                    pert = torch.randn_like(images_adv) * delta
+                    pert_plus = images_adv + pert
+                    pert_minus = images_adv - pert
+                    
+                    # Clip to valid range
+                    pert_plus = torch.clamp(pert_plus, 0, 1)
+                    pert_minus = torch.clamp(pert_minus, 0, 1)
+                    
+                    # Compute loss gradient approximation
+                    with torch.no_grad():
+                        loss_plus = F.cross_entropy(model(pert_plus), labels)
+                        loss_minus = F.cross_entropy(model(pert_minus), labels)
+                    
+                    # Approximate gradient
+                    grad_approx = (loss_plus - loss_minus) / (2 * delta)
+                    
+                    # Update adversarial images
+                    images_adv = images_adv - lr * grad_approx * pert.sign()
+                    images_adv = torch.clamp(images_adv, 0, 1).detach()
+                
+                return images_adv
+            
+            def boundary(self, images, model, labels, steps=1000, spherical_step=0.01, source_step=0.01):
+                """Boundary attack"""
+                images_adv = images.clone().detach()
+                model.eval()
+                
+                batch_size = images.shape[0]
+                
+                for b in range(batch_size):
+                    image = images[b:b+1]
+                    label = labels[b:b+1]
+                    
+                    # Start from random point
+                    adv = torch.rand_like(image) * 0.5 + 0.25
+                    
+                    for step in range(steps):
+                        # Random perturbation on sphere
+                        perturbation = torch.randn_like(adv)
+                        perturbation = perturbation / (perturbation.norm() + 1e-8) * spherical_step
+                        
+                        # Project back to sphere
+                        candidate = adv + perturbation
+                        candidate = candidate / (candidate.norm() + 1e-8) * image.norm()
+                        
+                        # Step towards source
+                        candidate = candidate + (image - candidate) * source_step
+                        
+                        # Check if adversarial
+                        with torch.no_grad():
+                            pred = model(candidate).argmax()
+                        
+                        if pred != label:
+                            adv = candidate
+                
+                return adv
+            
+            def jsma(self, images, model, labels, theta=1.0, gamma=0.1, max_iter=20):
+                """JSMA (Jacobian-based Saliency Map Attack)"""
+                images_adv = images.clone().detach()
+                model.eval()
+                
+                batch_size = images.shape[0]
+                
+                for b in range(batch_size):
+                    image = images_adv[b:b+1]
+                    label = labels[b:b+1]
+                    
+                    for _ in range(max_iter):
+                        image.requires_grad = True
+                        outputs = model(image)
+                        
+                        # Create target class (not the original)
+                        num_classes = outputs.shape[1]
+                        target = (label + 1) % num_classes
+                        
+                        # Compute saliency map
+                        saliency = torch.zeros_like(image)
+                        for c in range(num_classes):
+                            if c != label:
+                                grad = torch.autograd.grad(outputs[0, c], image)[0]
+                                saliency += grad.abs()
+                        
+                        # Find pixel to modify
+                        saliency_flat = saliency.view(-1)
+                        idx = saliency_flat.argmax()
+                        
+                        # Modify pixel
+                        flat_image = image.view(-1)
+                        flat_image[idx] += theta * gamma
+                        
+                        # Clip to valid range
+                        image = torch.clamp(image, 0, 1).detach()
+                        
+                        # Check if successful
+                        with torch.no_grad():
+                            pred = model(image).argmax()
+                        
+                        if pred != label:
+                            break
+                
+                return images_adv
         
         return AttackGenerator(self.device)
     
@@ -1219,28 +1658,34 @@ class AdversarialFirewall:
             if clean_count >= samples_per_class:
                 break
         
-        # Define attack methods based on whether to include all attacks
-        if include_all_attacks:
-            attack_methods = [
-                ('FGSM', 1),
-                ('PGD', 2),
-                ('Noise', 3),
-                ('MIA', 4),
-                ('CW', 5),  # Carlini-Wagner
-            ]
-        else:
-            # Default: use first 4 attacks for training
-            attack_methods = [
-                ('FGSM', 1),
-                ('PGD', 2),
-                ('Noise', 3),
-                ('MIA', 4)
-            ]
+        # Determine which attacks to include based on num_training_classes
+        attack_methods = []
+        
+        # Define all available attacks with their IDs and methods
+        available_attacks = [
+            ('FGSM', 1, self.attack_generator.fgsm),
+            ('PGD', 2, self.attack_generator.pgd),
+            ('Noise', 3, self.attack_generator.noise),
+            ('MIA', 4, self.attack_generator.mia),
+            ('CW', 5, self.attack_generator.cw),
+            ('DeepFool', 6, self.attack_generator.deepfool),
+            ('SPSA', 7, self.attack_generator.spsa),
+            ('Boundary', 8, self.attack_generator.boundary),
+            ('JSMA', 9, self.attack_generator.jsma),
+        ]
+        
+        # Add attacks up to num_training_classes - 1 (since class 0 is Clean)
+        for i in range(1, self.num_training_classes):
+            if i - 1 < len(available_attacks):
+                attack_name, class_id, attack_method = available_attacks[i - 1]
+                attack_methods.append((attack_name, class_id, attack_method))
+        
+        logger.info(f"Will generate data for: Clean + {[name for name, _, _ in attack_methods]}")
         
         # Adversarial samples
         self.main_model.eval()
         
-        for attack_name, class_id in attack_methods:
+        for attack_name, class_id, attack_method in attack_methods:
             logger.info(f"\nProcessing {attack_name} samples...")
             
             samples_collected = 0
@@ -1261,26 +1706,47 @@ class AdversarialFirewall:
                     if attack_name == 'FGSM':
                         # Vary epsilon for different attack strengths
                         eps = random.choice([0.1, 0.2, 0.3, 0.4])
-                        adv_images = self.attack_generator.fgsm(
+                        adv_images = attack_method(
                             images, self.main_model, labels, eps=eps
                         )
                     elif attack_name == 'PGD':
                         # Vary steps for different attack strengths
                         steps = random.choice([5, 10, 15])
-                        adv_images = self.attack_generator.pgd(
+                        adv_images = attack_method(
                             images, self.main_model, labels, eps=0.3, alpha=0.01, steps=steps
                         )
                     elif attack_name == 'Noise':
                         # Vary noise level
                         level = random.choice([0.05, 0.1, 0.15, 0.2])
-                        adv_images = self.attack_generator.noise(images, level=level)
+                        adv_images = attack_method(images, level=level)
                     elif attack_name == 'MIA':
-                        adv_images = self.attack_generator.mia(
+                        adv_images = attack_method(
                             images, self.main_model, labels, eps=0.3, alpha=0.01, steps=10
                         )
                     elif attack_name == 'CW':
-                        adv_images = self.attack_generator.cw(
+                        adv_images = attack_method(
                             images, self.main_model, labels, c=1.0, steps=50, lr=0.01
+                        )
+                    elif attack_name == 'DeepFool':
+                        adv_images = attack_method(
+                            images, self.main_model, labels, max_iter=50, overshoot=0.02
+                        )
+                    elif attack_name == 'SPSA':
+                        adv_images = attack_method(
+                            images, self.main_model, labels, epsilon=0.1, delta=0.01, lr=0.01, iterations=10
+                        )
+                    elif attack_name == 'Boundary':
+                        adv_images = attack_method(
+                            images, self.main_model, labels, steps=100, spherical_step=0.01, source_step=0.01
+                        )
+                    elif attack_name == 'JSMA':
+                        adv_images = attack_method(
+                            images, self.main_model, labels, theta=1.0, gamma=0.1, max_iter=20
+                        )
+                    else:
+                        # Default: use FGSM as fallback
+                        adv_images = self.attack_generator.fgsm(
+                            images, self.main_model, labels, eps=0.3
                         )
                 
                 all_images.append(adv_images.cpu())
@@ -1357,10 +1823,11 @@ class AdversarialFirewall:
         logger.info(f"Training samples: {len(train_dataset)}, Validation samples: {len(val_dataset)}")
         
         # Calculate class weights for imbalanced data
+        # Use the actual number of unique classes in the training data
         num_train_classes = len(np.unique(y_train))
         
         logger.info(f"Training classes: {num_train_classes}")
-        logger.info(f"Training class distribution: {np.bincount(y_train)}")
+        logger.info(f"Training class distribution: {np.bincount(y_train, minlength=num_train_classes)}")
         
         # Create weights for actual training classes
         class_counts = np.bincount(y_train, minlength=num_train_classes)
@@ -1504,7 +1971,8 @@ class AdversarialFirewall:
                     'scheduler_state_dict': self.scheduler.state_dict(),
                     'val_acc': val_acc,
                     'config': self.config.__dict__,
-                    'history': self.history
+                    'history': self.history,
+                    'num_training_classes': self.num_training_classes
                 }, checkpoint_path)
                 logger.info(f"  [Checkpoint saved: {checkpoint_path}]")
             
@@ -1520,7 +1988,8 @@ class AdversarialFirewall:
                     'scheduler_state_dict': self.scheduler.state_dict(),
                     'val_acc': val_acc,
                     'config': self.config.__dict__,
-                    'history': self.history
+                    'history': self.history,
+                    'num_training_classes': self.num_training_classes
                 }, best_model_path)
                 logger.info(f"  [Best model saved: Val Acc = {val_acc:.1f}%]")
             
@@ -1813,6 +2282,175 @@ class AdversarialFirewall:
         
         return results
     
+    def visualize_attacks_comparison(self, save_path: Optional[str] = None):
+        """Visualize comparison between clean and adversarial images for different attack types"""
+        try:
+            import matplotlib.pyplot as plt
+            
+            # Load test images
+            test_dataset = self._load_dataset(train=False, num_samples=5)
+            test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
+            
+            images, labels = next(iter(test_loader))
+            images = images.to(self.device)
+            labels = labels.to(self.device)
+            
+            # Select attack types to visualize (up to 5)
+            attack_types = list(self.config.attack_classes.values())[:5]  # First 5 attack types
+            
+            n_attacks = len(attack_types)
+            fig, axes = plt.subplots(n_attacks, 2, figsize=(10, 3 * n_attacks))
+            
+            if n_attacks == 1:
+                axes = axes.reshape(1, -1)
+            
+            self.main_model.eval()
+            
+            for i, attack_name in enumerate(attack_types):
+                # Clean image (first column)
+                clean_np = images[0].cpu().numpy()
+                if clean_np.shape[0] in [1, 3]:
+                    clean_np = np.transpose(clean_np, (1, 2, 0))
+                
+                axes[i, 0].imshow(clean_np if clean_np.shape[2] == 3 else clean_np.squeeze(), 
+                                cmap='gray' if len(clean_np.shape) == 2 else None)
+                axes[i, 0].set_title('Clean Image')
+                axes[i, 0].axis('off')
+                
+                # Adversarial image (second column)
+                if attack_name == 'Clean':
+                    adv_np = clean_np
+                    attack_title = 'Clean (No Attack)'
+                else:
+                    with torch.enable_grad():
+                        if attack_name == 'FGSM':
+                            adv_images = self.attack_generator.fgsm(images, self.main_model, labels, eps=0.3)
+                        elif attack_name == 'PGD':
+                            adv_images = self.attack_generator.pgd(images, self.main_model, labels, eps=0.3, alpha=0.01, steps=10)
+                        elif attack_name == 'Noise':
+                            adv_images = self.attack_generator.noise(images, level=0.1)
+                        elif attack_name == 'MIA':
+                            adv_images = self.attack_generator.mia(images, self.main_model, labels, eps=0.3, alpha=0.01, steps=10)
+                        elif attack_name == 'CW':
+                            adv_images = self.attack_generator.cw(images, self.main_model, labels, c=1.0, steps=50, lr=0.01)
+                        else:
+                            adv_images = self.attack_generator.fgsm(images, self.main_model, labels, eps=0.3)
+                    
+                    adv_np = adv_images[0].cpu().numpy()
+                    if adv_np.shape[0] in [1, 3]:
+                        adv_np = np.transpose(adv_np, (1, 2, 0))
+                    attack_title = attack_name
+                
+                axes[i, 1].imshow(adv_np if adv_np.shape[2] == 3 else adv_np.squeeze(), 
+                                cmap='gray' if len(adv_np.shape) == 2 else None)
+                axes[i, 1].set_title(f'{attack_title} Attack')
+                axes[i, 1].axis('off')
+            
+            plt.suptitle('Clean vs. Adversarial Images Comparison', fontsize=16, y=1.02)
+            plt.tight_layout()
+            
+            if save_path:
+                plt.savefig(save_path, dpi=150, bbox_inches='tight')
+                plt.close()
+                logger.info(f"Attack comparison visualization saved to: {save_path}")
+            else:
+                plt.show()
+                
+        except Exception as e:
+            logger.error(f"Error visualizing attack comparison: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def visualize_feature_extraction(self, save_dir: Optional[str] = None):
+        """Visualize spatial and frequency feature extraction"""
+        try:
+            import matplotlib.pyplot as plt
+            
+            # Load a sample image
+            test_dataset = self._load_dataset(train=False, num_samples=1)
+            test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
+            
+            image, _ = next(iter(test_loader))
+            image = image.to(self.device)
+            
+            # Convert to numpy for visualization
+            img_np = image[0].cpu().numpy()
+            
+            # Create output directory if needed
+            if save_dir:
+                save_dir_path = Path(save_dir)
+                save_dir_path.mkdir(exist_ok=True, parents=True)
+            else:
+                save_dir_path = self.output_dir / 'feature_visualizations'
+                save_dir_path.mkdir(exist_ok=True, parents=True)
+            
+            # Visualize spatial features
+            spatial_save_path = save_dir_path / 'spatial_features.png'
+            self.firewall.spatial_extractor.visualize_features(img_np, str(spatial_save_path))
+            
+            # Visualize frequency features
+            freq_save_path = save_dir_path / 'frequency_features.png'
+            self.firewall.freq_extractor.visualize_features(img_np, str(freq_save_path))
+            
+            logger.info(f"Feature visualizations saved to: {save_dir_path}")
+            
+        except Exception as e:
+            logger.error(f"Error visualizing feature extraction: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def visualize_defense_effects_all(self, save_dir: Optional[str] = None):
+        """Visualize defense effects for all attack types"""
+        try:
+            import matplotlib.pyplot as plt
+            
+            # Load test images
+            test_dataset = self._load_dataset(train=False, num_samples=3)
+            test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=3, shuffle=False)
+            
+            images, labels = next(iter(test_loader))
+            images = images.to(self.device)
+            labels = labels.to(self.device)
+            
+            # Create output directory if needed
+            if save_dir:
+                save_dir_path = Path(save_dir)
+                save_dir_path.mkdir(exist_ok=True, parents=True)
+            else:
+                save_dir_path = self.output_dir / 'defense_visualizations'
+                save_dir_path.mkdir(exist_ok=True, parents=True)
+            
+            # Test each attack type
+            attack_types = list(self.config.attack_classes.values())[1:5]  # Skip 'Clean'
+            
+            for attack_name in attack_types:
+                # Generate adversarial examples
+                self.main_model.eval()
+                with torch.enable_grad():
+                    if attack_name == 'FGSM':
+                        adv_images = self.attack_generator.fgsm(images, self.main_model, labels, eps=0.3)
+                    elif attack_name == 'PGD':
+                        adv_images = self.attack_generator.pgd(images, self.main_model, labels, eps=0.3, alpha=0.01, steps=10)
+                    elif attack_name == 'Noise':
+                        adv_images = self.attack_generator.noise(images, level=0.1)
+                    elif attack_name == 'MIA':
+                        adv_images = self.attack_generator.mia(images, self.main_model, labels, eps=0.3, alpha=0.01, steps=10)
+                    elif attack_name == 'CW':
+                        adv_images = self.attack_generator.cw(images, self.main_model, labels, c=1.0, steps=50, lr=0.01)
+                    else:
+                        continue
+                
+                # Visualize defense effects
+                defense_save_path = save_dir_path / f'defense_{attack_name.lower()}.png'
+                self.defense_module.visualize_defense_effects(adv_images, attack_name, str(defense_save_path))
+            
+            logger.info(f"Defense visualizations saved to: {save_dir_path}")
+            
+        except Exception as e:
+            logger.error(f"Error visualizing defense effects: {e}")
+            import traceback
+            traceback.print_exc()
+    
     def evaluate_firewall(self):
         """Comprehensive evaluation of the firewall"""
         logger.info(f"\n[3/4] Evaluating enhanced adversarial firewall...")
@@ -1831,7 +2469,7 @@ class AdversarialFirewall:
         self.main_model.eval()
         
         # Test each attack type
-        attack_types = ['Clean', 'FGSM', 'PGD', 'Noise', 'MIA']
+        attack_types = list(self.config.attack_classes.values())
         results = {}
         
         for attack_idx, attack_name in enumerate(attack_types):
@@ -1864,6 +2502,31 @@ class AdversarialFirewall:
                         elif attack_name == 'MIA':
                             images = self.attack_generator.mia(
                                 images, self.main_model, labels, eps=0.3, alpha=0.01, steps=10
+                            )
+                        elif attack_name == 'CW':
+                            images = self.attack_generator.cw(
+                                images, self.main_model, labels, c=1.0, steps=50, lr=0.01
+                            )
+                        elif attack_name == 'DeepFool':
+                            images = self.attack_generator.deepfool(
+                                images, self.main_model, labels, max_iter=50, overshoot=0.02
+                            )
+                        elif attack_name == 'SPSA':
+                            images = self.attack_generator.spsa(
+                                images, self.main_model, labels, epsilon=0.1, delta=0.01, lr=0.01, iterations=10
+                            )
+                        elif attack_name == 'Boundary':
+                            images = self.attack_generator.boundary(
+                                images, self.main_model, labels, steps=100, spherical_step=0.01, source_step=0.01
+                            )
+                        elif attack_name == 'JSMA':
+                            images = self.attack_generator.jsma(
+                                images, self.main_model, labels, theta=1.0, gamma=0.1, max_iter=20
+                            )
+                        else:
+                            # Default to FGSM for unknown attacks
+                            images = self.attack_generator.fgsm(
+                                images, self.main_model, labels, eps=0.3
                             )
                 
                 # Process through firewall
@@ -2221,14 +2884,34 @@ def run_adversarial_firewall_demo(dataset_name='CIFAR10', num_training_classes=5
         # Step 3: Train firewall
         firewall.train_firewall(num_epochs=25)
         
-        # Step 4: Evaluate firewall
-        logger.info(f"\n[4/4] Comprehensive evaluation...")
+        # Step 4: Visualize examples
+        logger.info(f"\n[4/4] Generating visual examples...")
+        
+        # Create visualization directory
+        vis_dir = firewall.output_dir / 'visual_examples'
+        vis_dir.mkdir(exist_ok=True)
+        
+        # 1. Clean vs. adversarial images comparison
+        logger.info("\n1. Generating clean vs. adversarial images comparison...")
+        attack_comparison_path = vis_dir / 'attack_comparison.png'
+        firewall.visualize_attacks_comparison(str(attack_comparison_path))
+        
+        # 2. Feature visualizations
+        logger.info("\n2. Generating feature extraction visualizations...")
+        firewall.visualize_feature_extraction(str(vis_dir))
+        
+        # 3. Defense effects visualizations
+        logger.info("\n3. Generating defense effects visualizations...")
+        firewall.visualize_defense_effects_all(str(vis_dir))
+        
+        # Step 5: Evaluate firewall
+        logger.info(f"\n[5/5] Comprehensive evaluation...")
         results = firewall.evaluate_firewall()
         
-        # Step 5: Save firewall
+        # Step 6: Save firewall
         firewall.save_firewall()
         
-        # Step 6: Demonstrate deployment
+        # Step 7: Demonstrate deployment
         logger.info(f"\n{'='*80}")
         logger.info("DEPLOYMENT DEMONSTRATION")
         logger.info(f"{'='*80}")
@@ -2286,6 +2969,13 @@ def run_adversarial_firewall_demo(dataset_name='CIFAR10', num_training_classes=5
             defense_rate = (firewall.stats['defended_forwarded'] + firewall.stats['blocked']) / firewall.stats['total_requests']
             logger.info(f"  Defense Activation Rate: {defense_rate*100:.1f}%")
         
+        # Visual examples summary
+        logger.info(f"\nVISUAL EXAMPLES GENERATED:")
+        logger.info(f"  1. Attack Comparison: {attack_comparison_path}")
+        logger.info(f"  2. Feature Visualizations: {vis_dir / 'spatial_features.png'}")
+        logger.info(f"  3. Feature Visualizations: {vis_dir / 'frequency_features.png'}")
+        logger.info(f"  4. Defense Effects: Check {vis_dir} for defense_*.png files")
+        
         return firewall, protected_model
         
     except Exception as e:
@@ -2302,7 +2992,7 @@ if __name__ == "__main__":
         description='Enhanced Multi-Class Adversarial Firewall with Adaptive Defense'
     )
     parser.add_argument('--mode', type=str, default='demo',
-                       choices=['demo', 'train', 'evaluate', 'deploy', 'importance', 'compress'],
+                       choices=['demo', 'train', 'evaluate', 'deploy', 'importance', 'compress', 'visualize'],
                        help='Execution mode')
     parser.add_argument('--dataset', type=str, default='CIFAR10',
                        choices=['MNIST', 'CIFAR10', 'CIFAR100'],
@@ -2321,6 +3011,8 @@ if __name__ == "__main__":
                        help='Compression ratio for model compression (0.0-1.0)')
     parser.add_argument('--include_all_attacks', action='store_true',
                        help='Include all attack types in training')
+    parser.add_argument('--visualize_only', action='store_true',
+                       help='Only generate visualizations without training')
     
     args = parser.parse_args()
     
@@ -2393,6 +3085,22 @@ if __name__ == "__main__":
                 firewall.load_firewall(args.load)
             firewall.compress_firewall(compression_ratio=args.compress_ratio)
             firewall.save_firewall('compressed_firewall.pth')
+        elif args.mode == 'visualize':
+            logger.info("\nVisualization mode...")
+            firewall = AdversarialFirewall(args.dataset, num_classes=args.num_classes)
+            if args.load:
+                firewall.load_firewall(args.load)
+            
+            # Create visualization directory
+            vis_dir = Path(args.output) / 'visual_examples'
+            vis_dir.mkdir(exist_ok=True, parents=True)
+            
+            # Generate all visualizations
+            firewall.visualize_attacks_comparison(str(vis_dir / 'attack_comparison.png'))
+            firewall.visualize_feature_extraction(str(vis_dir))
+            firewall.visualize_defense_effects_all(str(vis_dir))
+            
+            logger.info(f"\nAll visualizations saved to: {vis_dir}")
         
         logger.info("\nOperation completed!")
         
@@ -2402,5 +3110,3 @@ if __name__ == "__main__":
         logger.error(f"\nError: {e}")
         import traceback
         traceback.print_exc()
-
-
