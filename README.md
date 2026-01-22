@@ -32,17 +32,19 @@ python adversarial_firewall.py --mode demo --dataset CIFAR10
 # Training with all attack types:
 python adversarial_firewall.py --mode train --dataset CIFAR10 --epochs 25 --samples 400
 # Evaluation Mode:
-python adversarial_firewall.py --mode evaluate --dataset CIFAR10 --load path/to/best_firewall_model.pth
+python adversarial_firewall.py --mode evaluate --dataset CIFAR10 --load firewall_output/best_firewall_model.pth
 
 #  Deployment Mode:
-python adversarial_firewall.py --mode deploy --dataset CIFAR10 --load path/to/best_firewall_model.pth
+python adversarial_firewall.py --mode deploy --dataset CIFAR10 --load firewall_output/best_firewall_model.pth
+
+#Visualization Mode
+python adversarial_firewall.py --mode visualize --dataset CIFAR10 --load firewall_output/best_firewall_model.pth
 
 #Feature Importance Analysis
-python adversarial_firewall.py --mode importance --dataset CIFAR10 --load path/to/best_firewall_model.pth
-
+python adversarial_firewall.py --mode importance --dataset CIFAR10 --load firewall_output/best_firewall_model.pth
 #Model Compression
 
-python adversarial_firewall.py --mode compress --dataset CIFAR10 --load path/to/model.pth --compress_ratio 0.5
+python adversarial_firewall.py --mode compress --dataset CIFAR10 --load firewall_output/best_firewall_model.pth --compress_ratio 0.5
 ```
 #Project Structure
 ```bash
